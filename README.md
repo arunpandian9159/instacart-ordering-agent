@@ -45,7 +45,7 @@ This project leverages the power of AI and web automation to create an agent cap
 
 1. Run the test script to see the agent in action:
    ```bash
-   python crew_test.py
+   python instacart_agent.py
    ```
 
 2. Follow the daily updates to enhance the agent's capabilities. 🎁
