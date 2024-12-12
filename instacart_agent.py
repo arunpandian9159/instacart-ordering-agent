@@ -85,7 +85,7 @@ web_agent = Agent(
 )
 
 web_task = Task(
-    description="Open a browser and navigate to 'https://www.example.com'",
+    description="Open a browser and navigate to 'https://www.instacart.com'",
     expected_output="Confirmation of successful browser opening and navigation",
     agent=web_agent
 )
