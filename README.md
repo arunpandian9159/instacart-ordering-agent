@@ -23,6 +23,12 @@ This project leverages the power of AI and web automation to create an agent cap
 - [LiteLLM](https://litellm.com)
 - [dotenv](https://pypi.org/project/python-dotenv/)
 
+## Why Gemini?
+
+Gemini Flash 2.0 is currently experimental which makes it free to use and it scores very high in our web extraction leaderboard.
+
+https://coffeeblack.ai/extractor-leaderboard/
+
 ### Installation
 
 1. Clone the repository:
