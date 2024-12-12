@@ -1,13 +1,12 @@
 from crewai import Agent, Task
 from crewai.tools import BaseTool
-from litellm import completion
 import json
 import os
 from dotenv import load_dotenv
 from playwright.sync_api import sync_playwright
 from typing import Optional, Any
 from pydantic import Field
-
+from crewai import LLM
 # Load environment variables
 load_dotenv()
 
@@ -16,21 +15,12 @@ with open(os.getenv('GOOGLE_APPLICATION_CREDENTIALS'), 'r') as file:
     vertex_credentials = json.load(file)
 vertex_credentials_json = json.dumps(vertex_credentials)
 
-# Custom LLM class to use LiteLLM with CrewAI
-class LiteLLMWrapper:
-    def __init__(self, vertex_credentials):
-        self.vertex_credentials = vertex_credentials
-    
-    def __call__(self, prompt):
-        response = completion(
-            model="gemini-2.0-flash-002",
-            messages=[{"content": prompt, "role": "user"}],
-            vertex_credentials=self.vertex_credentials
-        )
-        return response.choices[0].message.content
 
-# Initialize the custom LLM
-litellm_model = LiteLLMWrapper(vertex_credentials_json)
+llm = LLM(
+    model="gemini-2.0-flash-exp",
+    custom_llm_provider="vertex_ai",
+    api_key=vertex_credentials_json
+)
 
 # Custom Playwright Tools
 class OpenBrowserTool(BaseTool):
@@ -81,7 +71,7 @@ web_agent = Agent(
     backstory="""You are a web automation expert capable of browsing websites 
     and gathering information. You can open browsers and navigate to different URLs.""",
     tools=[browser_tool, navigate_tool],
-    llm="gemini-1.5-flash-002"
+    llm=llm
 )
 
 web_task = Task(

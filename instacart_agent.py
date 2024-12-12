@@ -1,4 +1,4 @@
-from crewai import Agent, Task
+from crewai import Agent, Task, LLM
 from crewai.tools import BaseTool
 from litellm import completion
 import json
@@ -7,6 +7,8 @@ from dotenv import load_dotenv
 from playwright.sync_api import sync_playwright
 from typing import Optional, Any
 from pydantic import Field
+from bs4 import BeautifulSoup
+from html_utils import clean_html_file  # Import the function
 
 # Load environment variables
 load_dotenv()
@@ -16,22 +18,11 @@ with open(os.getenv('GOOGLE_APPLICATION_CREDENTIALS'), 'r') as file:
     vertex_credentials = json.load(file)
 vertex_credentials_json = json.dumps(vertex_credentials)
 
-# Custom LLM class to use LiteLLM with CrewAI
-class LiteLLMWrapper:
-    def __init__(self, vertex_credentials):
-        self.vertex_credentials = vertex_credentials
-    
-    def __call__(self, prompt):
-        response = completion(
-            model="gemini-2.0-flash-002",
-            messages=[{"content": prompt, "role": "user"}],
-            vertex_credentials=self.vertex_credentials
-        )
-        return response.choices[0].message.content
-
-# Initialize the custom LLM
-litellm_model = LiteLLMWrapper(vertex_credentials_json)
-
+llm = LLM(
+    model="gemini-2.0-flash-exp",
+    custom_llm_provider="vertex_ai",
+    api_key=vertex_credentials_json
+)
 # Custom Playwright Tools
 class OpenBrowserTool(BaseTool):
     name: str = "open_browser"
@@ -70,9 +61,58 @@ class NavigateTool(BaseTool):
         self.browser_tool.page.goto(url)
         return f"Navigated to {url} successfully"
 
+class GetHtmlTool(BaseTool):
+    name: str = "get_html"
+    description: str = "Gets the HTML from the current page and cleans it using clean_html_file"
+    browser_tool: OpenBrowserTool = Field(default=None)
+    
+    def __init__(self, browser_tool: OpenBrowserTool):
+        super().__init__(browser_tool=browser_tool)
+    
+    def _run(self, file_path: str) -> str:
+        """Gets the HTML from the current page and cleans it"""
+        if not self.browser_tool.page:
+            return "Browser is not opened. Please open browser first."
+        
+        # Get the HTML content from the page
+        html_content = self.browser_tool.page.content()
+        
+        # Write the HTML content to a file
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.write(html_content)
+        
+        # Clean the HTML file
+        clean_html_file(file_path)
+        
+        return f"HTML content retrieved and cleaned. Saved to {file_path}"
+
+class SaveHtmlTool(BaseTool):
+    name: str = "save_html"
+    description: str = "Saves the HTML content to a specified file path"
+    browser_tool: OpenBrowserTool = Field(default=None)
+    
+    def __init__(self, browser_tool: OpenBrowserTool):
+        super().__init__(browser_tool=browser_tool)
+    
+    def _run(self, file_path: str) -> str:
+        """Saves the HTML content to a specified file path"""
+        if not self.browser_tool.page:
+            return "Browser is not opened. Please open browser first."
+        
+        # Get the HTML content from the page
+        html_content = self.browser_tool.page.content()
+        
+        # Write the HTML content to a file
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.write(html_content)
+        
+        return f"HTML content saved to {file_path}"
+
 # Initialize tools
 browser_tool = OpenBrowserTool()
 navigate_tool = NavigateTool(browser_tool)
+get_html_tool = GetHtmlTool(browser_tool)
+save_html_tool = SaveHtmlTool(browser_tool)
 
 # Create a web automation agent
 web_agent = Agent(
@@ -80,13 +120,13 @@ web_agent = Agent(
     goal='Navigate and interact with web pages',
     backstory="""You are a web automation expert capable of browsing websites 
     and gathering information. You can open browsers and navigate to different URLs.""",
-    tools=[browser_tool, navigate_tool],
-    llm="gemini-1.5-flash-002"
+    tools=[browser_tool, navigate_tool, get_html_tool, save_html_tool],
+    llm=llm  # Use the new GeminiLLM instance
 )
 
 web_task = Task(
     description="Open a browser and navigate to 'https://www.instacart.com'",
-    expected_output="Confirmation of successful browser opening and navigation",
+    expected_output="Confirmation of successful browser opening and navigation and save the file to index.html",
     agent=web_agent
 )
 
@@ -94,4 +134,7 @@ web_task = Task(
 print("\nWeb Agent's Response:")
 web_result = web_agent.execute_task(web_task)
 print(web_result)
+
+# Example usage of clean_html_file:
+# clean_html_file('path/to/your/file.html')
 
