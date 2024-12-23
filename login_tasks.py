@@ -110,7 +110,7 @@ def get_login_with_email_tasks(web_agent):
             Fill in the emauk input field:
             
             2. Find the input field with placeholder "Email"
-            3. Fill in the phone number "peytoncas@gmail.com"
+            3. Fill in the email "peytoncas@gmail.com"
             
             Use these tools in sequence:
             1. wait_tool - Wait 2 seconds for input to be fully interactive
@@ -121,7 +121,7 @@ def get_login_with_email_tasks(web_agent):
         ),
         Task(
             description="""
-            Press Enter key after entering phone number:
+            Press Enter key after entering email:
             
             1. Wait briefly for the input to be ready
             2. Press the Enter key to submit the email
@@ -132,7 +132,7 @@ def get_login_with_email_tasks(web_agent):
             2. press_key_tool - Press the "Enter" key with selector '[placeholder="Email"]'
             3. wait_tool - Wait 2 seconds for next screen
             """,
-            expected_output="""Successfully pressed Enter after phone number entry""",
+            expected_output="""Successfully pressed Enter after email entry""",
             agent=web_agent,
         ),
         Task(

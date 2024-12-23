@@ -11,7 +11,8 @@ from bs4 import BeautifulSoup
 from html_utils import clean_html_file
 from dataclasses import dataclass
 from login_tasks import get_login_with_phone_tasks, get_login_with_email_tasks
-from cart_management_tasks import search_for_item_tasks
+from cart_management_tasks import search_with_enter_tasks, search_with_click_tasks
+import argparse
 
 # Load environment variables
 load_dotenv()
@@ -28,7 +29,8 @@ vertex_credentials_json = json.dumps(vertex_credentials)
 llm = LLM(
     model="gemini-1.5-flash-002",
     custom_llm_provider="vertex_ai",
-    api_key=vertex_credentials_json
+    api_key=vertex_credentials_json,
+    region="us-central1"
 )
 
 class NavigateTool(BaseTool):
@@ -175,7 +177,7 @@ class WaitTool(BaseTool):
     def __init__(self, page):
         super().__init__(page=page)
     
-    def _run(self, duration_ms: int = 2000) -> str:
+    def _run(self, duration_ms: int = 5000) -> str:
         """Waits for the specified duration in milliseconds"""
         if not self.page:
             return "Browser is not opened. Please open browser first."
@@ -254,6 +256,46 @@ class ClickContinueAfterPhoneTool(BaseTool):
         except Exception as e:
             return f"Error finding or clicking Continue button: {str(e)}"
 
+class ClickButtonTool(BaseTool):
+    name: str = "click_button_tool"
+    description: str = "Clicks a button identified by a data-testid selector"
+    page: Optional[Any] = Field(default=None)
+    
+    def __init__(self, page):
+        super().__init__(page=page)
+    
+    def _run(self, selector: str) -> str:
+        """Clicks a button using a data-testid selector"""
+        if not self.page:
+            return "Browser is not opened. Please open browser first."
+        
+        try:
+            # Wait for the button to be visible
+            self.page.wait_for_selector(selector, state='visible', timeout=5000)
+            self.page.click(selector)
+            return f"Successfully clicked button with selector: {selector}"
+        except Exception as e:
+            return f"Error clicking button: {str(e)}"
+
+class RefreshTool(BaseTool):
+    name: str = "refresh"
+    description: str = "Refreshes the current page"
+    page: Optional[Any] = Field(default=None)
+    
+    def __init__(self, page):
+        super().__init__(page=page)
+    
+    def _run(self) -> str:
+        """Refreshes the current page"""
+        if not self.page:
+            return "Browser is not opened. Please open browser first."
+        
+        try:
+            self.page.reload()
+            return "Successfully refreshed the page"
+        except Exception as e:
+            return f"Error refreshing page: {str(e)}"
+
 @dataclass
 class InstacartState:
     """Represents the current state of the Instacart automation"""
@@ -268,20 +310,35 @@ class InstacartState:
 class InstacartFlow:
     """Custom flow class to manage Instacart automation"""
     
-    def __init__(self):
-        self.state = InstacartState()
+    def __init__(self, ws_endpoint, logged_in=False):
+        self.ws_endpoint = ws_endpoint
+        self.state = InstacartState(is_logged_in=logged_in)
         self.tools = []
         self.web_agent = None
         self.selector_agent = None
         self.login_crew = None
         self.search_crew = None
+        self.use_click_search = True  # Toggle between search methods
+        self.use_testid_selector = True  # Toggle between button selectors
 
     def initialize(self):
         """Initialize browser, tools, and agents"""
-        # Initialize browser
+        # Initialize browser by connecting to the existing instance
         self.state.playwright = sync_playwright().start()
-        self.state.browser = self.state.playwright.chromium.launch(headless=False)
-        self.state.page = self.state.browser.new_page()
+        self.state.browser = self.state.playwright.chromium.connect_over_cdp(self.ws_endpoint)
+        
+        # Get the first context and page instead of creating new ones
+        contexts = self.state.browser.contexts
+        if not contexts:
+            raise Exception("No browser context found")
+        
+        context = contexts[0]
+        pages = context.pages
+        if not pages:
+            raise Exception("No pages found in the browser context")
+        
+        # Use the first existing page
+        self.state.page = pages[0]
         
         # Initialize tools
         self.tools = [
@@ -291,11 +348,13 @@ class InstacartFlow:
             FillInputTool(self.state.page),
             ClickElementTool(self.state.page),
             ClickButtonWithTextTool(self.state.page),
+            ClickButtonTool(self.state.page),
             ScreenshotTool(self.state.page),
             PressKeyTool(self.state.page),
             WaitTool(self.state.page),
             GetHumanInputTool(),
-            ClickContinueAfterPhoneTool(self.state.page)
+            ClickContinueAfterPhoneTool(self.state.page),
+            RefreshTool(self.state.page)
         ]
 
         # Initialize agents
@@ -320,7 +379,7 @@ class InstacartFlow:
         # Initialize search crew
         self.search_crew = Crew(
             agents=[self.web_agent],
-            tasks=search_for_item_tasks(web_agent=self.web_agent),
+            tasks=search_with_enter_tasks(web_agent=self.web_agent, item=""),
             process=Process.sequential,
             planning=False
         )
@@ -330,38 +389,86 @@ class InstacartFlow:
         try:
             self.initialize()
             
-            # Run login crew first
-            login_result = self.login_crew.kickoff()
-            print("Login Result:", login_result)
+            if not self.state.is_logged_in:
+                login_result = self.login_crew.kickoff()
+                print("Login Result:", login_result)
+                self.state.page.wait_for_timeout(2000)
+            else:
+                login_result = "Already logged in"
+                print("Skipping login - already logged in")
+
+            search_results = []
             
-            # Wait briefly after login
-            self.state.page.wait_for_timeout(2000)
-            
-            # Run search crew after successful login
-            search_result = self.search_crew.kickoff()
-            print("Search Result:", search_result)
+            while True:
+                ingredient = input("Enter an ingredient to add (or 'stop' to exit): ")
+                
+                if ingredient.lower() == 'stop':
+                    break
+                
+                # Determine which search method and button selector to use
+                search_method = "click" if self.use_click_search else "enter"
+                button_selector = ('[data-testid="addItemButtonExpandingAdd"]' 
+                                 if self.use_testid_selector 
+                                 else 'button[aria-label^="Add 1 item"]')
+                
+                print(f"Using {search_method} search method with {button_selector}...")
+                
+                # Create tasks with current configuration
+                if self.use_click_search:
+                    tasks = search_with_click_tasks(
+                        web_agent=self.web_agent, 
+                        item=ingredient,
+                        button_selector=button_selector
+                    )
+                else:
+                    tasks = search_with_enter_tasks(
+                        web_agent=self.web_agent, 
+                        item=ingredient,
+                        button_selector=button_selector
+                    )
+                
+                self.search_crew.tasks = tasks
+                
+                # Run search crew to add the ingredient
+                search_result = self.search_crew.kickoff()
+                search_results.append({
+                    "ingredient": ingredient,
+                    "method": search_method,
+                    "button_selector": button_selector,
+                    "result": search_result
+                })
+                print(f"Search Result for {ingredient}:", search_result)
+                
+                # Toggle both search method and button selector for next iteration
+                self.use_click_search = not self.use_click_search
+                self.use_testid_selector = not self.use_testid_selector
             
             return {
                 "login_result": login_result,
-                "search_result": search_result
+                "search_results": search_results
             }
         finally:
             self.cleanup()
 
     def cleanup(self):
         """Clean up resources"""
-        if self.state.page:
-            self.state.page.close()
+        # Don't close the page since we're using an existing one
         if self.state.browser:
-            self.state.browser.close()
+            self.state.browser.disconnect()  # Disconnect instead of close
         if self.state.playwright:
             self.state.playwright.stop()
 
-def run_instacart_automation():
-    flow = InstacartFlow()
+def run_instacart_automation(ws_endpoint, logged_in=False):
+    flow = InstacartFlow(ws_endpoint, logged_in)
     result = flow.run()
     return result
 
 if __name__ == "__main__":
-    result = run_instacart_automation()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--ws-endpoint", required=True, help="WebSocket endpoint of the browser")
+    parser.add_argument("--logged-in", action="store_true", default=False, 
+                       help="Include this flag if the user is already logged in")
+    args = parser.parse_args()
+
+    result = run_instacart_automation(args.ws_endpoint, args.logged_in)
     print("Automation Result:", result)
