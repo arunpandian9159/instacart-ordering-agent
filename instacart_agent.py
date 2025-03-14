@@ -325,7 +325,13 @@ class InstacartFlow:
         """Initialize browser, tools, and agents"""
         # Initialize browser by connecting to the existing instance
         self.state.playwright = sync_playwright().start()
-        self.state.browser = self.state.playwright.chromium.connect_over_cdp(self.ws_endpoint)
+        self.state.browser = self.state.playwright.chromium.launch(headless=False, args=["--start-maximized"])
+        self.state.context = self.state.browser.new_context()
+        self.state.page = self.state.context.new_page()  # Open a new page
+        self.state.page.goto("https://www.instacart.com")  # Open Instacart website
+
+
+
         
         # Get the first context and page instead of creating new ones
         contexts = self.state.browser.contexts
@@ -454,7 +460,9 @@ class InstacartFlow:
         """Clean up resources"""
         # Don't close the page since we're using an existing one
         if self.state.browser:
-            self.state.browser.disconnect()  # Disconnect instead of close
+            if self.state.browser.is_connected():
+               self.state.browser.close()
+  # Disconnect instead of close
         if self.state.playwright:
             self.state.playwright.stop()
 
