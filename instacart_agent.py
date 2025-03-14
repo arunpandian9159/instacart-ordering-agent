@@ -466,8 +466,7 @@ def run_instacart_automation(ws_endpoint, logged_in=False):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--ws-endpoint", required=True, help="WebSocket endpoint of the browser")
-    parser.add_argument("--logged-in", action="store_true", default=False, 
-                       help="Include this flag if the user is already logged in")
+    parser.add_argument("--logged-in", action="store_true", default=False, help="Include this flag if the user is already logged in")
     args = parser.parse_args()
 
     result = run_instacart_automation(args.ws_endpoint, args.logged_in)
