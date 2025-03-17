@@ -22,15 +22,12 @@ class Selector(BaseModel):
     action: str
 
 # Load Vertex AI credentials
-with open(os.getenv('GOOGLE_APPLICATION_CREDENTIALS'), 'r') as file:
-    vertex_credentials = json.load(file)
-vertex_credentials_json = json.dumps(vertex_credentials)
+# with open(os.getenv('GOOGLE_APPLICATION_CREDENTIALS'), 'r') as file:
+#     vertex_credentials = json.load(file)
+# vertex_credentials_json = json.dumps(vertex_credentials)
 
 llm = LLM(
-    model="gemini-1.5-flash-002",
-    custom_llm_provider="vertex_ai",
-    api_key=vertex_credentials_json,
-    region="us-central1"
+    model="ollama/llama3.2"
 )
 
 class NavigateTool(BaseTool):
